@@ -44,7 +44,7 @@ on:
         required: false
         default: "latest"
       registry-url:
-        description: "NPM registry URL"
+        description: "NPM registry endpoint"
         type: string
         required: false
         default: "https://registry.npmjs.org"
@@ -57,6 +57,10 @@ on:
       NPM_TOKEN:
         description: "Optional legacy NPM authentication token (fallback if Trusted Publishing is not used)"
         required: false
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   release:
@@ -156,11 +160,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          echo "OIDC token available: $([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo "YES" || echo "NO")"
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "No NODE_AUTH_TOKEN provided. Cleaning up empty _authToken from npm userconfig to enable OIDC Trusted Publishing..."
+            echo "No NODE_AUTH_TOKEN provided. Removing temporary .npmrc to allow clean OIDC Trusted Publishing..."
             if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
-              sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
+              rm -f "$NPM_CONFIG_USERCONFIG"
             fi
+            unset NPM_CONFIG_USERCONFIG
             unset NODE_AUTH_TOKEN
           else
             echo "NODE_AUTH_TOKEN detected, using token authentication."
