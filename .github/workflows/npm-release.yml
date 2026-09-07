@@ -97,6 +97,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
 
+      - name: Ensure modern npm for OIDC Trusted Publishing
+        run: |
+          current_major=$(npm --version | cut -d. -f1)
+          if [ "$current_major" -lt 11 ]; then
+            echo "Current npm is $(npm --version). Trusted Publishing requires npm >= 11. Upgrading npm..."
+            npm install -g npm@latest
+            echo "Upgraded npm to $(npm --version)"
+          else
+            echo "npm version $(npm --version) supports Trusted Publishing."
+          fi
+
       - name: Verify lockfile & Install dependencies
         run: |
           if [ ! -f "package-lock.json" ]; then
