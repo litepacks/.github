@@ -443,9 +443,19 @@ export function getReleaseReadiness(workingDir = '.', tag = '', options = {}) {
  * 8. Generate GitHub Actions Step Summary Markdown
  */
 export function generateSummaryMarkdown(state) {
-  const { pkg, tag, scriptResults = {}, docboot = {}, pack = {}, registryCheck = {}, release = {} } = state;
+  const { pkg, tag, scriptResults = {}, docboot = {}, pack = {}, registryCheck = {}, release = {}, jobStatus } = state;
 
-  const boolBadge = (cond, label, detail = '') => (cond ? `- [x] **${label}** ${detail}` : `- [ ] **${label}** ${detail}`);
+  const isFailed = jobStatus === "failure" || jobStatus === "cancelled";
+  let statusBadge = "✅ Published to npm";
+  if (isFailed) {
+    statusBadge = "❌ Release Failed";
+  } else if (registryCheck.published && !release.published) {
+    statusBadge = "⚠️ Skipped (Already Published)";
+  } else if (!release.published) {
+    statusBadge = "⏳ Pending";
+  }
+
+  const boolBadge = (cond, label, detail = "") => (cond ? `- [x] **${label}** ${detail}` : `- [ ] **${label}** ${detail}`);
 
   return `
 # 📦 Litepacks Release Summary
@@ -455,28 +465,28 @@ export function generateSummaryMarkdown(state) {
 | **Package** | \`${pkg.name}\` |
 | **Version** | \`${pkg.version}\` |
 | **Release Tag** | \`${tag}\` |
-| **Registry** | \`${registryCheck.registry || 'https://registry.npmjs.org'}\` |
-| **Status** | **${release.published ? 'Published to npm' : (registryCheck.published ? 'Skipped (Already Published)' : 'Verified')}** |
+| **Registry** | \`${registryCheck.registry || "https://registry.npmjs.org"}\` |
+| **Status** | **${statusBadge}** |
 
 ---
 
 ### 🛡️ Pre-Release Gates
 
-${boolBadge(true, 'Tag & Version Match', `(\`${tag}\` ↔ \`${pkg.version}\`)`)}
-${scriptResults.lint !== undefined ? boolBadge(scriptResults.lint, 'Lint', scriptResults.lint ? '(\`npm run lint\`)' : '(failed)') : '- [ ] **Lint** *(skipped — no script)*'}
-${scriptResults.typecheck !== undefined ? boolBadge(scriptResults.typecheck, 'Typecheck', scriptResults.typecheck ? '(\`npm run typecheck\`)' : '(failed)') : '- [ ] **Typecheck** *(skipped — no script)*'}
-${scriptResults.test !== undefined ? boolBadge(scriptResults.test, 'Unit Tests', scriptResults.test ? '(\`npm test\`)' : '(failed)') : '- [ ] **Unit Tests** *(skipped — no script)*'}
-${scriptResults.build !== undefined ? boolBadge(scriptResults.build, 'Build', scriptResults.build ? '(\`npm run build\`)' : '(failed)') : '- [ ] **Build** *(skipped — no script)*'}
-${docboot.enabled ? boolBadge(docboot.status === 'passed', 'Docboot Validation', `(\`${docboot.command || 'docboot check'}\`)`) : `- [ ] **Docboot Gate** *(${docboot.reason || 'skipped'})*`}
-${boolBadge(pack.valid, 'Package Pack Check', `(\`${pack.fileCount} files\`, \`${Math.round((pack.unpackedSize || 0) / 1024)} KB\`)`)}
+${boolBadge(true, "Tag & Version Match", `(\`${tag}\` ↔ \`${pkg.version}\`)`)}
+${scriptResults.lint !== undefined ? boolBadge(scriptResults.lint, "Lint", scriptResults.lint ? "(\`npm run lint\`)" : "(failed)") : "- [ ] **Lint** *(skipped — no script)*"}
+${scriptResults.typecheck !== undefined ? boolBadge(scriptResults.typecheck, "Typecheck", scriptResults.typecheck ? "(\`npm run typecheck\`)" : "(failed)") : "- [ ] **Typecheck** *(skipped — no script)*"}
+${scriptResults.test !== undefined ? boolBadge(scriptResults.test, "Unit Tests", scriptResults.test ? "(\`npm test\`)" : "(failed)") : "- [ ] **Unit Tests** *(skipped — no script)*"}
+${scriptResults.build !== undefined ? boolBadge(scriptResults.build, "Build", scriptResults.build ? "(\`npm run build\`)" : "(failed)") : "- [ ] **Build** *(skipped — no script)*"}
+${docboot.enabled ? boolBadge(docboot.status === "passed", "Docboot Validation", `(\`${docboot.command || "docboot check"}\`)`) : `- [ ] **Docboot Gate** *(${docboot.reason || "skipped"})*`}
+${boolBadge(pack.valid, "Package Pack Check", `(\`${pack.fileCount} files\`, \`${Math.round((pack.unpackedSize || 0) / 1024)} KB\`)`)}
 
 ---
 
 ### 🚀 Registry & Delivery
 
 - **npm Registry Check**: ${registryCheck.published ? `⚠️ \`${pkg.name}@${pkg.version}\` is already published. (Skipped duplicate publish)` : `✓ Version is fresh and ready to publish`}
-- **npm Publish**: ${release.published ? `✓ Published successfully via Trusted Publishing (--provenance)` : (registryCheck.published ? `Skipped (Already published)` : `Pending`)}
-- **GitHub Release**: ${release.githubReleaseCreated ? `✓ Release created for tag \`${tag}\`` : (release.githubReleaseSkipped ? `Release already exists` : `Pending`)}
+- **npm Publish**: ${release.published ? `✓ Published successfully via Trusted Publishing (--provenance)` : (isFailed ? `❌ Failed during pipeline execution` : (registryCheck.published ? `Skipped (Already published)` : `Pending`))}
+- **GitHub Release**: ${release.githubReleaseCreated ? `✓ Release created for tag \`${tag}\`` : (isFailed ? `❌ Skipped due to pipeline failure` : (release.githubReleaseSkipped ? `Release already exists` : `Pending`))}
 `.trim();
 }
 
@@ -486,34 +496,40 @@ ${boolBadge(pack.valid, 'Package Pack Check', `(\`${pack.fileCount} files\`, \`$
 function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {
-    dir: '.',
-    tag: process.env.GITHUB_REF_NAME || process.env.TAG || '',
-    stage: 'all',
+    dir: ".",
+    tag: process.env.GITHUB_REF_NAME || process.env.TAG || "",
+    stage: "all",
     requireTests: true,
     requireBuild: false,
-    runDocboot: 'auto',
-    docbootCommand: '',
-    registryUrl: 'https://registry.npmjs.org',
-    publishAccess: 'public',
-    npmTag: 'latest',
+    runDocboot: "auto",
+    docbootCommand: "",
+    registryUrl: "https://registry.npmjs.org",
+    publishAccess: "public",
+    npmTag: "latest",
     json: false,
-    summaryFile: process.env.GITHUB_STEP_SUMMARY || ''
+    jobStatus: "success",
+    published: "false",
+    releaseCreated: "false",
+    summaryFile: process.env.GITHUB_STEP_SUMMARY || ""
   };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--dir') options.dir = args[++i];
-    else if (arg === '--tag') options.tag = args[++i];
-    else if (arg === '--stage') options.stage = args[++i];
-    else if (arg === '--require-tests') options.requireTests = args[++i] === 'true';
-    else if (arg === '--require-build') options.requireBuild = args[++i] === 'true';
-    else if (arg === '--run-docboot') options.runDocboot = args[++i];
-    else if (arg === '--docboot-command') options.docbootCommand = args[++i];
-    else if (arg === '--registry-url') options.registryUrl = args[++i];
-    else if (arg === '--publish-access') options.publishAccess = args[++i];
-    else if (arg === '--npm-tag') options.npmTag = args[++i];
-    else if (arg === '--summary-file') options.summaryFile = args[++i];
-    else if (arg === '--json') options.json = true;
+    if (arg === "--dir") options.dir = args[++i];
+    else if (arg === "--tag") options.tag = args[++i];
+    else if (arg === "--stage") options.stage = args[++i];
+    else if (arg === "--require-tests") options.requireTests = args[++i] === "true";
+    else if (arg === "--require-build") options.requireBuild = args[++i] === "true";
+    else if (arg === "--run-docboot") options.runDocboot = args[++i];
+    else if (arg === "--docboot-command") options.docbootCommand = args[++i];
+    else if (arg === "--registry-url") options.registryUrl = args[++i];
+    else if (arg === "--publish-access") options.publishAccess = args[++i];
+    else if (arg === "--npm-tag") options.npmTag = args[++i];
+    else if (arg === "--summary-file") options.summaryFile = args[++i];
+    else if (arg === "--job-status") options.jobStatus = args[++i];
+    else if (arg === "--published") options.published = args[++i];
+    else if (arg === "--release-created") options.releaseCreated = args[++i];
+    else if (arg === "--json") options.json = true;
   }
 
   return options;
@@ -526,7 +542,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const pkg = getPackageInfo(options.dir);
 
     // Stage: pre-flight (tag validation + package sanity)
-    if (options.stage === 'pre-flight') {
+    if (options.stage === "pre-flight") {
       if (options.tag) {
         validateTag(options.tag, pkg.version);
         console.log(`✓ Tag "${options.tag}" matches package.json version "${pkg.version}".`);
@@ -538,24 +554,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log(`✓ Package "${pkg.name}@${pkg.version}" pre-flight checks passed.`);
 
       if (process.env.GITHUB_OUTPUT) {
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pkg_name=${pkg.name}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pkg_version=${pkg.version}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_lint=${scripts.lint}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_typecheck=${scripts.typecheck}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_test=${scripts.test}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_build=${scripts.build}
-`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pkg_name=${pkg.name}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pkg_version=${pkg.version}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_lint=${scripts.lint}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_typecheck=${scripts.typecheck}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_test=${scripts.test}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_build=${scripts.build}\n`);
       }
       process.exit(0);
     }
 
     // Stage: docboot
-    if (options.stage === 'docboot') {
+    if (options.stage === "docboot") {
       const docbootResult = checkDocboot(options.dir, {
         runDocboot: options.runDocboot,
         docbootCommand: options.docbootCommand,
@@ -569,27 +579,24 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         console.log(`- Docboot check skipped (${docbootResult.reason}).`);
       }
       if (process.env.GITHUB_OUTPUT) {
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `docboot_status=${docbootResult.status}
-`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `docboot_status=${docbootResult.status}\n`);
       }
       process.exit(0);
     }
 
     // Stage: pack
-    if (options.stage === 'pack') {
+    if (options.stage === "pack") {
       const packResult = validateNpmPack(options.dir);
       console.log(`✓ npm pack validated: ${packResult.fileCount} files, ${packResult.unpackedSize} bytes.`);
       if (process.env.GITHUB_OUTPUT) {
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pack_file_count=${packResult.fileCount}
-`);
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pack_size=${packResult.unpackedSize}
-`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pack_file_count=${packResult.fileCount}\n`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pack_size=${packResult.unpackedSize}\n`);
       }
       process.exit(0);
     }
 
     // Stage: registry-check
-    if (options.stage === 'registry-check') {
+    if (options.stage === "registry-check") {
       const reg = checkNpmVersion(pkg.name, pkg.version, options.registryUrl);
       if (reg.published) {
         console.log(`Package ${pkg.name}@${pkg.version} is already published.`);
@@ -598,23 +605,59 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         console.log(`✓ Version ${pkg.name}@${pkg.version} is not yet published on registry.`);
       }
       if (process.env.GITHUB_OUTPUT) {
-        fs.appendFileSync(process.env.GITHUB_OUTPUT, `already_published=${reg.published}
-`);
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `already_published=${reg.published}\n`);
       }
       process.exit(0);
     }
 
-    // Stage: all (Complete inspect / Readiness)
+    // Stage: summary (Post-execution summary)
+    if (options.stage === "summary") {
+      const isFailed = options.jobStatus === "failure" || options.jobStatus === "cancelled";
+      const isPublished = options.published === "true";
+      const isReleaseCreated = options.releaseCreated === "true";
+
+      const readiness = getReleaseReadiness(options.dir, options.tag, options);
+
+      console.log(`\n=== Litepacks Release Execution Summary: ${pkg.name}@${pkg.version} ===`);
+      console.log(`Pipeline Status:   ${isFailed ? "❌ FAILED" : "✅ SUCCESS"}`);
+      console.log(`Tag Match:         ${readiness.tagMatches ? "✓ Valid" : "✗ Invalid"}`);
+      console.log(`Docboot Status:    ${readiness.docboot.status}`);
+      console.log(`Pack Valid:        ${readiness.pack.valid ? `✓ (${readiness.pack.fileCount} files)` : "✗ Invalid"}`);
+      console.log(`npm Publish:       ${isPublished ? "✓ Published to npm" : (isFailed ? "❌ Failed or Skipped" : (readiness.alreadyPublished ? "Skipped (Already Published)" : "Pending"))}`);
+      console.log(`GitHub Release:    ${isReleaseCreated ? "✓ Created" : (isFailed ? "❌ Skipped" : "Pending")}`);
+      console.log(isFailed ? `\n❌ Release pipeline failed.\n` : `\n✅ Package ${pkg.name}@${pkg.version} released successfully.\n`);
+
+      if (options.summaryFile && fs.existsSync(path.dirname(options.summaryFile))) {
+        const summaryMd = generateSummaryMarkdown({
+          pkg,
+          tag: options.tag || `v${pkg.version}`,
+          scriptResults: readiness.scripts,
+          docboot: readiness.docboot,
+          pack: readiness.pack,
+          registryCheck: { published: readiness.alreadyPublished, registry: options.registryUrl },
+          release: {
+            published: isPublished,
+            githubReleaseCreated: isReleaseCreated
+          },
+          jobStatus: options.jobStatus
+        });
+        fs.appendFileSync(options.summaryFile, summaryMd + "\n");
+      }
+
+      process.exit(0);
+    }
+
+    // Stage: all (Pre-flight inspect / readiness tool)
     const readiness = getReleaseReadiness(options.dir, options.tag, options);
     if (options.json) {
       console.log(JSON.stringify(readiness, null, 2));
     } else {
       console.log(`\n=== Litepacks Release Readiness: ${pkg.name}@${pkg.version} ===`);
-      console.log(`Tag Match:         ${readiness.tagMatches ? '✓ Valid' : '✗ Invalid'}`);
-      console.log(`npm Published:     ${readiness.alreadyPublished ? 'Already published (Will Skip)' : '✓ Not yet published'}`);
+      console.log(`Tag Match:         ${readiness.tagMatches ? "✓ Valid" : "✗ Invalid"}`);
+      console.log(`npm Published:     ${readiness.alreadyPublished ? "Already published (Will Skip)" : "✓ Not yet published"}`);
       console.log(`Docboot Status:    ${readiness.docboot.status}`);
-      console.log(`Pack Valid:        ${readiness.pack.valid ? `✓ (${readiness.pack.fileCount} files)` : '✗ Invalid'}`);
-      console.log(`Overall Ready:     ${readiness.ready ? '✓ YES' : '✗ NO'}`);
+      console.log(`Pack Valid:        ${readiness.pack.valid ? `✓ (${readiness.pack.fileCount} files)` : "✗ Invalid"}`);
+      console.log(`Overall Ready:     ${readiness.ready ? "✓ YES" : "✗ NO"}`);
       console.log(`\n${readiness.summary}\n`);
     }
 
@@ -626,9 +669,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         docboot: readiness.docboot,
         pack: readiness.pack,
         registryCheck: { published: readiness.alreadyPublished, registry: options.registryUrl },
-        release: { published: false }
+        release: { published: false },
+        jobStatus: "success"
       });
-      fs.appendFileSync(options.summaryFile, summaryMd + '\n');
+      fs.appendFileSync(options.summaryFile, summaryMd + "\n");
     }
 
     process.exit(readiness.ready ? 0 : 1);

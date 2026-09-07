@@ -209,4 +209,8 @@ jobs:
             --tag "$GITHUB_REF_NAME" \
             --registry-url "${{ inputs.registry-url }}" \
             --run-docboot "${{ inputs.run-docboot }}" \
+            --stage summary \
+            --job-status "${{ job.status }}" \
+            --published "${{ steps.publish.outputs.published }}" \
+            --release-created "${{ steps.github_release.outputs.release_created }}" \
             --summary-file "$GITHUB_STEP_SUMMARY"
