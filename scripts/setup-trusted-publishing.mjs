@@ -3,11 +3,39 @@
 /**
  * Bulk Setup NPM Trusted Publishing for all Litepacks Packages
  * 
- * Uses official NPM CLI command:
- *   npm trust github <pkg> --repo <owner/repo> --file release.yml --allow-publish --yes
+ * Requirements:
+ *   - npm 12+ (e.g. Node 24 via `nvm use 24` or `npm install -g npm@latest`)
+ *   - Logged in to npm (`npm whoami`)
  */
 
-import { spawnSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
+
+// Check npm version
+let npmVersion = '';
+try {
+  npmVersion = execSync('npm --version', { encoding: 'utf-8' }).trim();
+} catch (e) {
+  console.error('Error: npm is not available in PATH.');
+  process.exit(1);
+}
+
+const major = parseInt(npmVersion.split('.')[0], 10);
+if (major < 12) {
+  console.error(`\n❌ npm version is ${npmVersion}. "npm trust" requires npm 12+ (Node 24+).`);
+  console.error(`\n💡 Çözüm:`);
+  console.error(`   1. nvm kullanıyorsanız:   nvm use 24`);
+  console.error(`   2. veya npm'i güncelleyin: npm install -g npm@latest\n`);
+  process.exit(1);
+}
+
+// Check npm whoami
+try {
+  const whoami = execSync('npm whoami', { encoding: 'utf-8' }).trim();
+  console.log(`✓ Logged in as: ${whoami}`);
+} catch (e) {
+  console.error('\n❌ npm login yapılmamış. Önce "npm login" çalıştırın.');
+  process.exit(1);
+}
 
 const PACKAGES = [
   { pkg: 'workmatic', repo: 'litepacks/workmatic', file: 'release.yml' },
