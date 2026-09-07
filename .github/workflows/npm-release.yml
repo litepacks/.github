@@ -58,14 +58,13 @@ on:
         description: "Optional legacy NPM authentication token (fallback if Trusted Publishing is not used)"
         required: false
 
-permissions:
-  contents: write
-  id-token: write
-
 jobs:
   release:
     name: Validate & Publish Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     concurrency:
       group: npm-release-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
@@ -157,6 +156,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "No NODE_AUTH_TOKEN provided. Cleaning up empty _authToken from npm userconfig to enable OIDC Trusted Publishing..."
+            if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+              sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
+            fi
+            unset NODE_AUTH_TOKEN
+          else
+            echo "NODE_AUTH_TOKEN detected, using token authentication."
+          fi
           echo "Publishing ${{ steps.preflight.outputs.pkg_name }}@${{ steps.preflight.outputs.pkg_version }} to npm..."
           npm publish --provenance --access "${{ inputs.publish-access }}" --tag "${{ inputs.npm-tag }}"
           echo "published=true" >> "$GITHUB_OUTPUT"
