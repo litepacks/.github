@@ -148,6 +148,7 @@ export function checkDocboot(workingDir = '.', options = {}) {
       const output = execSync('npm run docs:check', {
         cwd: absDir,
         encoding: 'utf-8',
+        timeout: 60000,
         stdio: ['ignore', 'pipe', 'pipe']
       });
       return {
@@ -160,6 +161,29 @@ export function checkDocboot(workingDir = '.', options = {}) {
     } catch (err) {
       throw new Error(
         `Docboot gate failed via "npm run docs:check":\n${err.stdout || ''}\n${err.stderr || err.message}`
+      );
+    }
+  }
+
+  // Priority 1.5: package.json "docs:doctor" script
+  if (pkgScripts['docs:doctor']) {
+    try {
+      const output = execSync('npm run docs:doctor', {
+        cwd: absDir,
+        encoding: 'utf-8',
+        timeout: 60000,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      return {
+        enabled: true,
+        status: 'passed',
+        mode: 'npm_script',
+        command: 'npm run docs:doctor',
+        output
+      };
+    } catch (err) {
+      throw new Error(
+        `Docboot gate failed via "npm run docs:doctor":\n${err.stdout || ''}\n${err.stderr || err.message}`
       );
     }
   }
@@ -217,12 +241,25 @@ export function checkDocboot(workingDir = '.', options = {}) {
     };
   }
 
-  // Run npx docboot check . --json
-  const checkCmd = 'npx --yes docboot check . --json';
+  // Detect if installed docboot CLI supports "check" command or fallback to "doctor"
+  let checkCmd = 'npx --yes docboot doctor ./docs';
+  try {
+    const helpOut = execSync('npx --yes docboot --help', {
+      cwd: absDir,
+      encoding: 'utf-8',
+      timeout: 15000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    if (helpOut.includes('check')) {
+      checkCmd = 'npx --yes docboot check . --json';
+    }
+  } catch (_) {}
+
   try {
     const stdout = execSync(checkCmd, {
       cwd: absDir,
       encoding: 'utf-8',
+      timeout: 60000,
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
