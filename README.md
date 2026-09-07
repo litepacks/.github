@@ -53,6 +53,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    secrets: inherit
 ```
 
 That's it! All validation, building, testing, documentation checking, and publishing is handled centrally.
@@ -85,6 +86,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    secrets: inherit
     with:
       node-version: 22
       require-build: true
