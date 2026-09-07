@@ -97,17 +97,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
 
-      - name: Ensure modern npm for OIDC Trusted Publishing
-        run: |
-          current_major=$(npm --version | cut -d. -f1)
-          if [ "$current_major" -lt 11 ]; then
-            echo "Current npm is $(npm --version). Trusted Publishing requires npm >= 11. Upgrading npm..."
-            npm install -g npm@latest
-            echo "Upgraded npm to $(npm --version)"
-          else
-            echo "npm version $(npm --version) supports Trusted Publishing."
-          fi
-
       - name: Verify lockfile & Install dependencies
         run: |
           if [ ! -f "package-lock.json" ]; then
@@ -173,7 +162,13 @@ jobs:
         run: |
           echo "OIDC token available: $([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo "YES" || echo "NO")"
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "No NODE_AUTH_TOKEN provided. Removing temporary .npmrc to allow clean OIDC Trusted Publishing..."
+            echo "No NODE_AUTH_TOKEN provided. Using OIDC Trusted Publishing..."
+            current_major=$(npm --version | cut -d. -f1)
+            if [ "$current_major" -lt 11 ]; then
+              echo "Current npm is $(npm --version). Upgrading npm to ^11 for OIDC Trusted Publishing..."
+              npm install -g npm@^11
+              echo "Upgraded npm to $(npm --version)"
+            fi
             if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
               rm -f "$NPM_CONFIG_USERCONFIG"
             fi
